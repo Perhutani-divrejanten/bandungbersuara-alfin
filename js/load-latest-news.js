@@ -7,42 +7,14 @@ function truncateText(text, maxLength) {
     return text;
 }
 
-function parseArticleDate(dateString) {
-    if (!dateString) return NaN;
-    const normalized = dateString.trim().replace(/\s*-\s*/g, '-').replace(/\//g, '-');
-    const parsed = new Date(normalized);
-    return isNaN(parsed.getTime()) ? NaN : parsed.getTime();
-}
-
 // Load Latest News section dynamically from articles.json
 async function loadLatestNews() {
     try {
-        const response = await fetch('articles.json');
+        const response = await fetch('/articles.json');
         const articles = await response.json();
 
-        // Urutkan artikel berdasarkan tanggal terbaru terlebih dahulu,
-        // lalu ambil 12 teratas untuk ditampilkan di halaman Home.
-        const latestArticles = articles
-            .map((article, index) => ({ ...article, _originalIndex: index }))
-            .sort((a, b) => {
-                const aTime = parseArticleDate(a.date);
-                const bTime = parseArticleDate(b.date);
-
-                const aValid = !isNaN(aTime);
-                const bValid = !isNaN(bTime);
-
-                if (aValid && bValid) {
-                    return bTime - aTime;
-                }
-                if (aValid && !bValid) {
-                    return -1;
-                }
-                if (!aValid && bValid) {
-                    return 1;
-                }
-                return b._originalIndex - a._originalIndex;
-            })
-            .slice(0, 12);
+        // Ambil 12 artikel paling akhir
+        const latestArticles = articles.slice(2, 14);
 
         // Simple container lookup by ID
         const latestNewsRow = document.getElementById('latestNewsRow');
@@ -78,8 +50,8 @@ async function loadLatestNews() {
                         <a href="${article.url}" class="article-title text-secondary text-uppercase font-weight-bold mb-2">${titleText}</a>
                         <p class="article-excerpt text-muted small mb-3">${excerptText}</p>
                         <div class="article-meta mt-auto d-flex align-items-center">
-                              <img class="rounded-circle mr-2" src="img/pp.png" alt="Author">
-                            <small class="text-muted">${article.author || ''}</small>
+                             <img class="rounded-circle mr-2" src="img/pp.png" alt="Author">
+                            <small class="text-muted">${article.author || 'Reporter'}</small>
                         </div>
                     </div>
                 </div>
