@@ -1,4 +1,4 @@
-﻿const axios = require('axios');
+const axios = require('axios');
 const fs = require('fs');
 const path = require('path');
 const Handlebars = require('handlebars');
@@ -36,6 +36,67 @@ function convertGoogleDriveLink(url) {
   }
   
   return url;
+}
+
+function normalizeDateString(date) {
+  if (!date) return '';
+  const str = String(date).trim();
+  const normalized = str.replace(/\s*-\s*/g, '-').replace(/\s*\/\s*/g, '/');
+
+  const isoMatch = normalized.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})$/);
+  if (isoMatch) {
+    const [, year, month, day] = isoMatch;
+    return `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
+  }
+
+  const altMatch = normalized.match(/^(\d{1,2})[-/](\d{1,2})[-/](\d{4})$/);
+  if (altMatch) {
+    const [, day, month, year] = altMatch;
+    return `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
+  }
+
+  const parsed = Date.parse(str);
+  if (!Number.isNaN(parsed)) {
+    return new Date(parsed).toISOString().split('T')[0];
+  }
+
+  return str;
+}
+
+function extractDateFromLocalContent(content) {
+  if (!content) return '';
+
+  const findDateText = () => {
+    const monthDateMatch = content.match(/>(Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:tember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\s+\d{1,2},\s+\d{4}</i);
+    if (monthDateMatch) {
+      return monthDateMatch[0].slice(1, -1).trim();
+    }
+
+    const isoMatch = content.match(/(\d{4})\s*-\s*(\d{1,2})\s*-\s*(\d{1,2})/);
+    if (isoMatch) {
+      return `${isoMatch[1]}-${isoMatch[2].padStart(2, '0')}-${isoMatch[3].padStart(2, '0')}`;
+    }
+
+    const slashMatch = content.match(/(\d{1,2})\s*\/\s*(\d{1,2})\s*\/\s*(\d{4})/);
+    if (slashMatch) {
+      return `${slashMatch[3]}-${slashMatch[2].padStart(2, '0')}-${slashMatch[1].padStart(2, '0')}`;
+    }
+
+    return '';
+  };
+
+  const candidate = findDateText();
+  if (!candidate) return '';
+
+  const normalized = normalizeDateString(candidate);
+  const parsed = Date.parse(normalized);
+  if (Number.isNaN(parsed)) return '';
+
+  const year = new Date(parsed).getUTCFullYear();
+  const currentYear = new Date().getUTCFullYear();
+  if (year < 2000 || year > currentYear + 2) return '';
+
+  return normalized;
 }
 
 function backupArticlesJson() {
@@ -85,40 +146,7 @@ function extractFirstImage(content) {
     }
   }
   
-  return 'img/logo.png';
-}
-
-function detectCategory(title, content) {
-  const text = title.toLowerCase();
-  
-  // Check for specific keywords in title and assign categories
-  if (text.includes('perhutani') || text.includes('kehutanan') || text.includes('hutan')) {
-    return 'Perhutani';
-  }
-  if (text.includes('lingkungan') || text.includes('pohon') || text.includes('penanaman') || text.includes('reboisasi') || text.includes('pelestarian')) {
-    return 'Lingkungan';
-  }
-  if (text.includes('ekonomi') || text.includes('umkm') || text.includes('koperasi') || text.includes('usaha') || text.includes('bisnis')) {
-    return 'Ekonomi';
-  }
-  if (text.includes('digital') || text.includes('teknologi') || text.includes('komputasional') || text.includes('internet') || text.includes('cloud')) {
-    return 'Teknologi';
-  }
-  if (text.includes('olahraga') || text.includes('timnas') || text.includes('sepak bola') || text.includes('persib') || text.includes('bojan') || text.includes('kurzawa')) {
-    return 'Olahraga';
-  }
-  if (text.includes('pendidikan') || text.includes('mahasiswa') || text.includes('siswa') || text.includes('sekolah') || text.includes('universitas')) {
-    return 'Pendidikan';
-  }
-  if (text.includes('bencana') || text.includes('longsor') || text.includes('banjir') || text.includes('gempa')) {
-    return 'Bencana';
-  }
-  if (text.includes('sosial') || text.includes('masyarakat') || text.includes('komunitas') || text.includes('kesehatan')) {
-    return 'Sosial';
-  }
-  
-  // Default category
-  return 'News';
+  return '';
 }
 
 function scanLocalArticles() {
@@ -148,21 +176,26 @@ function scanLocalArticles() {
       
       // Extract first image from content
       const imagePath = extractFirstImage(content);
+
+      // Extract badge/category from the badge element in HTML
+      let category = 'Berita Lokal';
+      const badgeMatch = content.match(/<a[^>]*class="badge badge-primary[^>]*>([^<]+)<\/a>/);
+      if (badgeMatch) {
+        category = badgeMatch[1].trim();
+      }
       
-      // Detect category based on title and content
-      const category = detectCategory(title, content);
-      
+      const localDate = extractDateFromLocalContent(content);
       localArticles.push({
         title,
         excerpt,
-        category,
-        date: new Date().toISOString().split('T')[0],
+        category: category,
+        date: localDate || '',
         image: imagePath,
         url: `article/${slug}.html`,
         slug,
         isLocal: true
       });
-      console.log(`   📄 ${slug} (category: ${category}, image: ${imagePath})`);
+      console.log(`   📄 ${slug} (image: ${imagePath})`);
     } catch (err) {
       console.warn(`   ⚠️  Error reading ${file}:`, err.message);
     }
@@ -253,7 +286,7 @@ async function generateArticles() {
 
         const articleData = {
           title: row.title || 'Untitled',
-          date: row.date || new Date().toISOString().split('T')[0],
+          date: normalizeDateString(row.date) || new Date().toISOString().split('T')[0],
           category: row.category || row.badge || 'News',
           badge: row.badge || row.category || 'News',
           image: imagePathForHTML,
@@ -321,15 +354,27 @@ async function generateArticles() {
       existingArticles = existingArticles.filter(a => sheetSlugs.has(a.slug) || a.isLocal === true);
     }
 
-    fs.writeFileSync(ARTICLES_JSON_PATH, JSON.stringify(existingArticles, null, 2), 'utf8');
-    console.log(`💾 Updated ${ARTICLES_JSON_PATH}`);
+    // SORT BY DATE (newest first) before saving
+    const sortedArticles = existingArticles.sort((a, b) => {
+      const dateA = Date.parse(normalizeDateString(a.date));
+      const dateB = Date.parse(normalizeDateString(b.date));
+      if (!Number.isNaN(dateA) && !Number.isNaN(dateB)) {
+        return dateB - dateA;
+      }
+      if (!Number.isNaN(dateA)) return -1;
+      if (!Number.isNaN(dateB)) return 1;
+      return 0;
+    });
+
+    fs.writeFileSync(ARTICLES_JSON_PATH, JSON.stringify(sortedArticles, null, 2), 'utf8');
+    console.log(`💾 Updated ${ARTICLES_JSON_PATH} (sorted by date, newest first)`);
 
     console.log(`\n📋 Summary:`);
     console.log(`   ✨ New: ${newCount}`);
     console.log(`   🔄 Updated: ${updateCount}`);
     console.log(`   ⏭️  Skipped: ${skipCount}`);
-    console.log(`     Local preserved: ${localPreserved}`);
-    console.log(`    🗑️  Deleted: ${removed.length}`);
+    console.log(`   � Local preserved: ${localPreserved}`);
+    console.log(`   �🗑️  Deleted: ${removed.length}`);
     console.log(`   📁 Total: ${existingArticles.length}`);
     console.log(`\n✅ Done!`);
   } catch (err) {
