@@ -106,18 +106,20 @@ document.addEventListener('DOMContentLoaded', function() {
             // Clear existing hardcoded items
             newsContainer.innerHTML = '';
 
-            // Sort articles newest-first by date when possible
+            // Sort articles purely by slug number descending.
             const sortedArticles = Array.isArray(articles)
-                ? articles.slice().sort((a, b) => {
-                    const dateA = Date.parse(normalizeDateString(a.date));
-                    const dateB = Date.parse(normalizeDateString(b.date));
-                    if (!Number.isNaN(dateA) && !Number.isNaN(dateB)) {
-                        return dateB - dateA;
-                    }
-                    if (!Number.isNaN(dateA)) return -1;
-                    if (!Number.isNaN(dateB)) return 1;
-                    return 0;
-                })
+                ? (() => {
+                    const withIndex = articles.map((article, idx) => ({ article, idx }));
+                    withIndex.sort((aObj, bObj) => {
+                        const a = aObj.article;
+                        const b = bObj.article;
+                        const numA = (() => { const m = String(a.slug || '').match(/(\d+)/); return m ? parseInt(m[1], 10) : 0; })();
+                        const numB = (() => { const m = String(b.slug || '').match(/(\d+)/); return m ? parseInt(m[1], 10) : 0; })();
+                        if (numB !== numA) return numB - numA;
+                        return bObj.idx - aObj.idx;
+                    });
+                    return withIndex.map(x => x.article);
+                })()
                 : articles;
 
             // Render semua artikel dari articles.json
